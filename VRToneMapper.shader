@@ -2,12 +2,7 @@ Shader "Hidden/Shader/VRToneMapper"
 {
     Properties
     {
-        // This property is necessary to make the CommandBuffer.Blit bind the source texture to _MainTex
-        //_MainTex("Main Texture", 2DArray) = "" {}
-        //_MipTex("Mipped Texture", 2DArray) = "miptex" {}
-        //_SourceTexture("Source Texture", 2DArray) = "" {}
-        //_MippedTexture("Mipped Source Texture", 2DArray) = "" {}
-        //_LuminanceTexture("Luminance Texture", 2D) = "" {}
+        // not needed
     }
 
     HLSLINCLUDE
@@ -37,10 +32,8 @@ Shader "Hidden/Shader/VRToneMapper"
     Varyings Vert(Attributes input)
     {
         Varyings output;
-
         UNITY_SETUP_INSTANCE_ID(input);
         UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
-
         output.positionCS = GetFullScreenTriangleVertexPosition(input.vertexID);
         output.texcoord = GetFullScreenTriangleTexCoord(input.vertexID);
         return output;
@@ -57,12 +50,10 @@ Shader "Hidden/Shader/VRToneMapper"
     int _MaxMipLevel;
 
     float _LuminanceKey;
-    float _TargetLuminance;
-
-    CBUFFER_START(RarelyUpdatedVariables)
     float _Sigma;
     float _AdaptationScale;
-    CBUFFER_END
+
+    float _DebugParameter;
 
     TEXTURE2D_X(_SourceTexture);
     TEXTURE2D_X(_MippedTexture);
@@ -94,7 +85,7 @@ Shader "Hidden/Shader/VRToneMapper"
         return float4(adaptLum, adaptLum * weight, Y, Y * weight);
     }
 
-    float4 InitLuminanceTexture(Varyings input) : SV_Target
+        float4 InitLuminanceTexture(Varyings input) : SV_Target
     {
         UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
         return LOAD_TEXTURE2D_X_LOD(_MippedTexture, uint2(0, 0), _MaxMipLevel);
@@ -104,7 +95,7 @@ Shader "Hidden/Shader/VRToneMapper"
         vector sigma = 0.04f / (0.04f + curr); //?
         vector tau = sigma * TAU_ROD + (1.0f - sigma) * TAU_CONE;
         float delta = unity_DeltaTime.x * _AdaptationScale;
-        return last + (curr - last) * (1.0f - exp(-delta/tau));
+        return last + (curr - last) * (1.0f - exp(-delta / tau));
     }
 
     float4 LuminanceProcess(Varyings input) : SV_Target
@@ -118,9 +109,9 @@ Shader "Hidden/Shader/VRToneMapper"
         float4 tau = sigma * TAU_ROD + (1.0f - sigma) * TAU_CONE;
         float delta = unity_DeltaTime.x;
 
-        return lastYs + (currentYs - lastYs) * (1.0f - exp(-delta/tau));
+        return lastYs + (currentYs - lastYs) * (1.0f - exp(-delta / tau));
     }
-
+        
     float4 ReinhardProcess(Varyings input) : SV_Target
     {
         UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -165,9 +156,9 @@ Shader "Hidden/Shader/VRToneMapper"
         UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
         float3 color = SAMPLE_TEXTURE2D_X(_SourceTexture, s_linear_clamp_sampler, input.texcoord).xyz;
         float w = Weight(input);
-        float r = 1.0f * _Sigma;
+        float r = _Sigma;
         float2 C = (input.texcoord - _GazeCenter) * _ScreenParams.xy; // in pixel space
-        float d = (length(C) < r + 1.0f) - (length(C) < (r - 1.0f)) + w;
+        float d = (length(C) < r + 1.0f) - (length(C) < (r - 1.0f));
         return float4(d.xxx, 1.0);
     }
 
@@ -176,9 +167,10 @@ Shader "Hidden/Shader/VRToneMapper"
         UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
         float3 color = SAMPLE_TEXTURE2D_X(_SourceTexture, s_linear_clamp_sampler, input.texcoord).xyz;
         float4 Ys = LOAD_TEXTURE2D_X_LOD(_MippedTexture, uint2(0, 0), _MaxMipLevel);
-        float a = abs(log(Luminance(color)) - Ys.y * AvgScalingFactor());
+        float a = abs(log(Luminance(color)) - Ys.y * AvgScalingFactor()) * _DebugParameter;// * AvgScalingFactor());
+        float o = abs(Ys.x - log(Ys.z)) * _DebugParameter;
         //float a = abs(Luminance(color)) / Ys.x;
-        return a.xxxx;
+        return float4(o.xxx, 1.0f);
     }
 
     ENDHLSL
@@ -213,6 +205,7 @@ Shader "Hidden/Shader/VRToneMapper"
                 #pragma vertex Vert
             ENDHLSL
         }
+
         Pass
         {
             Name "Init"
